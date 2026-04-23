@@ -155,8 +155,9 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     private val internalPlaybackThread =
         HandlerThread("ExoPlayer:Playback", Process.THREAD_PRIORITY_AUDIO)
     private var mediaSession: MediaLibrarySession? = null
+    private var internalPlayer: EndedWorkaroundPlayer? = null
     val endedWorkaroundPlayer
-        get() = mediaSession?.player as EndedWorkaroundPlayer?
+        get() = internalPlayer
     private var controller: MediaBrowser? = null
     private val sendLyrics = Runnable { scheduleSendingLyrics(false) }
     var lyrics: SemanticLyrics? = null
@@ -396,10 +397,50 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         player.exoPlayer.setShuffleOrder(CircularShuffleOrder(player, 0, 0, Random.nextLong()))
         lastPlayedManager = LastPlayedManager(this, player)
         lastPlayedManager.allowSavingState = false
+        internalPlayer = player
+
+        val sessionPlayer = object : androidx.media3.common.ForwardingPlayer(player) {
+            private fun convertItem(item: MediaItem?): MediaItem? {
+                if (item == null) return null
+                if (item.mediaMetadata.artworkUri?.scheme == "gramophoneSongCover") {
+                    val albumId = item.mediaMetadata.extras?.getLong(uk.akane.libphonograph.items.EXTRA_ALBUM_ID)
+                    if (albumId != null) {
+                        val uri = android.content.ContentUris.withAppendedId(uk.akane.libphonograph.Constants.baseAlbumCoverUri, albumId)
+                        return item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(uri).build()).build()
+                    }
+                }
+                return item
+            }
+            override fun getCurrentMediaItem(): MediaItem? {
+                return convertItem(super.getCurrentMediaItem())
+            }
+            override fun getMediaMetadata(): MediaMetadata {
+                val original = super.getMediaMetadata()
+                if (original.artworkUri?.scheme == "gramophoneSongCover") {
+                    val albumId = original.extras?.getLong(uk.akane.libphonograph.items.EXTRA_ALBUM_ID) 
+                        ?: super.getCurrentMediaItem()?.mediaMetadata?.extras?.getLong(uk.akane.libphonograph.items.EXTRA_ALBUM_ID)
+                    if (albumId != null) {
+                        val uri = android.content.ContentUris.withAppendedId(uk.akane.libphonograph.Constants.baseAlbumCoverUri, albumId)
+                        return original.buildUpon().setArtworkUri(uri).build()
+                    }
+                }
+                return original
+            }
+            override fun getCurrentTimeline(): androidx.media3.common.Timeline {
+                val original = super.getCurrentTimeline()
+                return object : androidx.media3.exoplayer.source.ForwardingTimeline(original) {
+                    override fun getWindow(windowIndex: Int, window: androidx.media3.common.Timeline.Window, defaultPositionProjectionUs: Long): androidx.media3.common.Timeline.Window {
+                        super.getWindow(windowIndex, window, defaultPositionProjectionUs)
+                        window.mediaItem = convertItem(window.mediaItem) ?: window.mediaItem
+                        return window
+                    }
+                }
+            }
+        }
 
         mediaSession =
             MediaLibrarySession
-                .Builder(this, player, this)
+                .Builder(this, sessionPlayer, this)
                 // CacheBitmapLoader is required for MeiZuLyricsMediaNotificationProvider
                 .setBitmapLoader(CacheBitmapLoader(object : BitmapLoader {
                     // Coil-based bitmap loader to reuse Coil's caching and to make sure we use
