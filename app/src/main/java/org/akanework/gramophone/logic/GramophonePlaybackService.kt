@@ -81,6 +81,8 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import androidx.preference.PreferenceManager
@@ -956,7 +958,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         return settable
     }
 
-    /*override fun onGetLibraryRoot(
+    override fun onGetLibraryRoot(
         session: MediaLibrarySession,
         browser: MediaSession.ControllerInfo,
         params: LibraryParams?
@@ -971,10 +973,178 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
             .setMediaMetadata(MediaMetadata.Builder()
                 .setIsBrowsable(true)
                 .setIsPlayable(false)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
                 .build())
             .build()
         return Futures.immediateFuture(LibraryResult.ofItem(item, outParams))
-    }*/
+    }
+
+    override fun onGetChildren(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        parentId: String,
+        page: Int,
+        pageSize: Int,
+        params: LibraryParams?
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+        val completion = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
+        lifecycleScope.launch(Dispatchers.Default) {
+            try {
+                val list = when (parentId) {
+                    "root" -> listOf(
+                        createFolderItem("songs", getString(R.string.category_songs), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
+                        createFolderItem("albums", getString(R.string.category_albums), MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS),
+                        createFolderItem("artists", getString(R.string.category_artists), MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS),
+                        createFolderItem("playlists", getString(R.string.category_playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
+                    )
+                    "songs" -> gramophoneApplication.reader.songListFlow.first()
+                    "albums" -> gramophoneApplication.reader.albumListFlow.first().map { createFolderItem("album_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) }
+                    "artists" -> gramophoneApplication.reader.artistListFlow.first().map { createFolderItem("artist_${it.title}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) }
+                    "playlists" -> gramophoneApplication.reader.playlistListFlow.first().map { createFolderItem("playlist_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) }
+                    else -> {
+                        if (parentId.startsWith("album_")) {
+                            val albumId = parentId.removePrefix("album_").toLongOrNull()
+                            gramophoneApplication.reader.songListFlow.first().filter { it.mediaMetadata.albumId == albumId }
+                        } else if (parentId.startsWith("artist_")) {
+                            val artistName = parentId.removePrefix("artist_")
+                            gramophoneApplication.reader.songListFlow.first().filter { it.mediaMetadata.artist == artistName }
+                        } else if (parentId.startsWith("playlist_")) {
+                            val playlistId = parentId.removePrefix("playlist_").toLongOrNull()
+                            gramophoneApplication.reader.playlistListFlow.first().find { it.id == playlistId }?.songList ?: emptyList()
+                        } else emptyList()
+                    }
+                }
+                
+                val startIndex = (page * pageSize).coerceIn(0, list.size)
+                val endIndex = ((page + 1) * pageSize).coerceIn(0, list.size)
+                val pagedList = if (page == 0 && pageSize == Int.MAX_VALUE) list else list.subList(startIndex, endIndex)
+                
+                completion.set(LibraryResult.ofItemList(pagedList, params))
+            } catch (e: Exception) {
+                completion.setException(e)
+            }
+        }
+        return completion
+    }
+
+    override fun onGetItem(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        mediaId: String
+    ): ListenableFuture<LibraryResult<MediaItem>> {
+        val completion = SettableFuture.create<LibraryResult<MediaItem>>()
+        lifecycleScope.launch(Dispatchers.Default) {
+            try {
+                val item = if (mediaId == "root") {
+                    MediaItem.Builder()
+                        .setMediaId("root")
+                        .setMediaMetadata(MediaMetadata.Builder()
+                            .setIsBrowsable(true)
+                            .setIsPlayable(false)
+                            .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                            .build())
+                        .build()
+                } else if (mediaId == "songs") {
+                    createFolderItem("songs", getString(R.string.category_songs), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                } else if (mediaId == "albums") {
+                    createFolderItem("albums", getString(R.string.category_albums), MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS)
+                } else if (mediaId == "artists") {
+                    createFolderItem("artists", getString(R.string.category_artists), MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS)
+                } else if (mediaId == "playlists") {
+                    createFolderItem("playlists", getString(R.string.category_playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
+                } else if (mediaId.startsWith("album_")) {
+                    val albumId = mediaId.removePrefix("album_").toLongOrNull()
+                    val album = gramophoneApplication.reader.albumListFlow.first().find { it.id == albumId }
+                    if (album != null) createFolderItem("album_${album.id}", album.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) else null
+                } else if (mediaId.startsWith("artist_")) {
+                    val artistName = mediaId.removePrefix("artist_")
+                    val artist = gramophoneApplication.reader.artistListFlow.first().find { it.title == artistName }
+                    if (artist != null) createFolderItem("artist_${artist.title}", artist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) else null
+                } else if (mediaId.startsWith("playlist_")) {
+                    val playlistId = mediaId.removePrefix("playlist_").toLongOrNull()
+                    val playlist = gramophoneApplication.reader.playlistListFlow.first().find { it.id == playlistId }
+                    if (playlist != null) createFolderItem("playlist_${playlist.id}", playlist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) else null
+                } else {
+                    gramophoneApplication.reader.songListFlow.first().find { it.mediaId == mediaId }
+                }
+
+                if (item != null) {
+                    completion.set(LibraryResult.ofItem(item, null))
+                } else {
+                    completion.set(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+                }
+            } catch (e: Exception) {
+                completion.setException(e)
+            }
+        }
+        return completion
+    }
+
+    private fun createFolderItem(id: String, title: String, mediaType: @MediaMetadata.MediaType Int): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(id)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(mediaType)
+                    .build()
+            )
+            .build()
+    }
+
+    override fun onSearch(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        query: String,
+        params: LibraryParams?
+    ): ListenableFuture<LibraryResult<Void>> {
+        val completion = SettableFuture.create<LibraryResult<Void>>()
+        lifecycleScope.launch(Dispatchers.Default) {
+            try {
+                session.notifySearchResultChanged(browser, query, 0, params)
+                completion.set(LibraryResult.ofVoid())
+            } catch (e: Exception) {
+                completion.setException(e)
+            }
+        }
+        return completion
+    }
+
+    override fun onGetSearchResult(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        query: String,
+        page: Int,
+        pageSize: Int,
+        params: LibraryParams?
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+        val completion = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
+        lifecycleScope.launch(Dispatchers.Default) {
+            try {
+                val list = searchForMediaItemSync(query)
+                val startIndex = (page * pageSize).coerceIn(0, list.size)
+                val endIndex = ((page + 1) * pageSize).coerceIn(0, list.size)
+                val pagedList = if (page == 0 && pageSize == Int.MAX_VALUE) list else list.subList(startIndex, endIndex)
+                completion.set(LibraryResult.ofItemList(pagedList, params))
+            } catch (e: Exception) {
+                completion.setException(e)
+            }
+        }
+        return completion
+    }
+
+    private suspend fun searchForMediaItemSync(query: String): List<MediaItem> {
+        val text = query.trim()
+        val list = gramophoneApplication.reader.songListFlow.first()
+        return if (text == "") list else list.filter {
+            val isMatchingTitle = it.mediaMetadata.title?.contains(text, true) == true
+            val isMatchingAlbum = it.mediaMetadata.albumTitle?.contains(text, true) == true
+            val isMatchingArtist = it.mediaMetadata.artist?.contains(text, true) == true
+            isMatchingTitle || isMatchingAlbum || isMatchingArtist
+        }
+    }
 
     override fun onTracksChanged(tracks: Tracks) {
         if (!tracks.isEmpty && !tracks.isTypeSelected(C.TRACK_TYPE_AUDIO)) {
