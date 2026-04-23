@@ -158,6 +158,18 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     private var internalPlayer: EndedWorkaroundPlayer? = null
     val endedWorkaroundPlayer
         get() = internalPlayer
+
+    private fun convertItem(item: MediaItem?): MediaItem? {
+        if (item == null) return null
+        if (item.mediaMetadata.artworkUri?.scheme == "gramophoneSongCover") {
+            val albumId = item.mediaMetadata.extras?.getLong(uk.akane.libphonograph.items.EXTRA_ALBUM_ID)
+            if (albumId != null) {
+                val uri = android.content.ContentUris.withAppendedId(uk.akane.libphonograph.Constants.baseAlbumCoverUri, albumId)
+                return item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(uri).build()).build()
+            }
+        }
+        return item
+    }
     private var controller: MediaBrowser? = null
     private val sendLyrics = Runnable { scheduleSendingLyrics(false) }
     var lyrics: SemanticLyrics? = null
@@ -400,17 +412,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         internalPlayer = player
 
         val sessionPlayer = object : androidx.media3.common.ForwardingPlayer(player) {
-            private fun convertItem(item: MediaItem?): MediaItem? {
-                if (item == null) return null
-                if (item.mediaMetadata.artworkUri?.scheme == "gramophoneSongCover") {
-                    val albumId = item.mediaMetadata.extras?.getLong(uk.akane.libphonograph.items.EXTRA_ALBUM_ID)
-                    if (albumId != null) {
-                        val uri = android.content.ContentUris.withAppendedId(uk.akane.libphonograph.Constants.baseAlbumCoverUri, albumId)
-                        return item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(uri).build()).build()
-                    }
-                }
-                return item
-            }
+
             override fun getCurrentMediaItem(): MediaItem? {
                 return convertItem(super.getCurrentMediaItem())
             }
@@ -1064,7 +1066,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                 
                 val startIndex = (page * pageSize).coerceIn(0, list.size)
                 val endIndex = ((page + 1) * pageSize).coerceIn(0, list.size)
-                val pagedList = if (page == 0 && pageSize == Int.MAX_VALUE) list else list.subList(startIndex, endIndex)
+                val pagedList = (if (page == 0 && pageSize == Int.MAX_VALUE) list else list.subList(startIndex, endIndex)).map { convertItem(it)!! }
                 
                 completion.set(LibraryResult.ofItemList(pagedList, params))
             } catch (e: Exception) {
@@ -1124,7 +1126,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                 }
 
                 if (item != null) {
-                    completion.set(LibraryResult.ofItem(item, null))
+                    completion.set(LibraryResult.ofItem(convertItem(item)!!, null))
                 } else {
                     completion.set(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
                 }
@@ -1189,7 +1191,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                 val list = searchForMediaItemSync(query)
                 val startIndex = (page * pageSize).coerceIn(0, list.size)
                 val endIndex = ((page + 1) * pageSize).coerceIn(0, list.size)
-                val pagedList = if (page == 0 && pageSize == Int.MAX_VALUE) list else list.subList(startIndex, endIndex)
+                val pagedList = (if (page == 0 && pageSize == Int.MAX_VALUE) list else list.subList(startIndex, endIndex)).map { convertItem(it)!! }
                 completion.set(LibraryResult.ofItemList(pagedList, params))
             } catch (e: Exception) {
                 completion.setException(e)
@@ -1464,7 +1466,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                     else
                         throw UnsupportedOperationException("can't do anything with $it")
                 }
-                completion.set(result)
+                completion.set(result.map { convertItem(it)!! })
             } catch (e: UnsupportedOperationException) {
                 completion.setException(e)
             }
