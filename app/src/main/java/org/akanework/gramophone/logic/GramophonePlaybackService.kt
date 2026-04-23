@@ -991,15 +991,21 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         lifecycleScope.launch(Dispatchers.Default) {
             try {
                 val list = when (parentId) {
-                    "root" -> listOf(
-                        createFolderItem("songs", getString(R.string.category_songs), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
-                        createFolderItem("albums", getString(R.string.category_albums), MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS),
-                        createFolderItem("artists", getString(R.string.category_artists), MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS),
-                        createFolderItem("playlists", getString(R.string.category_playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
-                    )
+                    "root" -> {
+                        val gridExtras = android.os.Bundle().apply {
+                            putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
+                            putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
+                        }
+                        listOf(
+                            createFolderItem("songs", getString(R.string.category_songs), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
+                            createFolderItem("albums", getString(R.string.category_albums), MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS, extras = gridExtras),
+                            createFolderItem("artists", getString(R.string.category_artists), MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS, extras = gridExtras),
+                            createFolderItem("playlists", getString(R.string.category_playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
+                        )
+                    }
                     "songs" -> gramophoneApplication.reader.songListFlow.first()
-                    "albums" -> gramophoneApplication.reader.albumListFlow.first().map { createFolderItem("album_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) }
-                    "artists" -> gramophoneApplication.reader.artistListFlow.first().map { createFolderItem("artist_${it.title}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) }
+                    "albums" -> gramophoneApplication.reader.albumListFlow.first().map { createFolderItem("album_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = it.cover, isPlayable = true, isBrowsable = false) }
+                    "artists" -> gramophoneApplication.reader.artistListFlow.first().map { createFolderItem("artist_${it.title}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = it.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) }
                     "playlists" -> gramophoneApplication.reader.playlistListFlow.first().map { createFolderItem("playlist_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) }
                     else -> {
                         if (parentId.startsWith("album_")) {
@@ -1047,19 +1053,27 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                 } else if (mediaId == "songs") {
                     createFolderItem("songs", getString(R.string.category_songs), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
                 } else if (mediaId == "albums") {
-                    createFolderItem("albums", getString(R.string.category_albums), MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS)
+                    val gridExtras = android.os.Bundle().apply {
+                        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
+                        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
+                    }
+                    createFolderItem("albums", getString(R.string.category_albums), MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS, extras = gridExtras)
                 } else if (mediaId == "artists") {
-                    createFolderItem("artists", getString(R.string.category_artists), MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS)
+                    val gridExtras = android.os.Bundle().apply {
+                        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
+                        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
+                    }
+                    createFolderItem("artists", getString(R.string.category_artists), MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS, extras = gridExtras)
                 } else if (mediaId == "playlists") {
                     createFolderItem("playlists", getString(R.string.category_playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
                 } else if (mediaId.startsWith("album_")) {
                     val albumId = mediaId.removePrefix("album_").toLongOrNull()
                     val album = gramophoneApplication.reader.albumListFlow.first().find { it.id == albumId }
-                    if (album != null) createFolderItem("album_${album.id}", album.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) else null
+                    if (album != null) createFolderItem("album_${album.id}", album.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = album.cover, isPlayable = true, isBrowsable = false) else null
                 } else if (mediaId.startsWith("artist_")) {
                     val artistName = mediaId.removePrefix("artist_")
                     val artist = gramophoneApplication.reader.artistListFlow.first().find { it.title == artistName }
-                    if (artist != null) createFolderItem("artist_${artist.title}", artist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) else null
+                    if (artist != null) createFolderItem("artist_${artist.title}", artist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = artist.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) else null
                 } else if (mediaId.startsWith("playlist_")) {
                     val playlistId = mediaId.removePrefix("playlist_").toLongOrNull()
                     val playlist = gramophoneApplication.reader.playlistListFlow.first().find { it.id == playlistId }
@@ -1080,17 +1094,25 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         return completion
     }
 
-    private fun createFolderItem(id: String, title: String, mediaType: @MediaMetadata.MediaType Int): MediaItem {
+    private fun createFolderItem(
+        id: String, 
+        title: String, 
+        mediaType: @MediaMetadata.MediaType Int,
+        extras: android.os.Bundle? = null,
+        artworkUri: android.net.Uri? = null,
+        isPlayable: Boolean = false,
+        isBrowsable: Boolean = true
+    ): MediaItem {
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(title)
+            .setIsBrowsable(isBrowsable)
+            .setIsPlayable(isPlayable)
+            .setMediaType(mediaType)
+        if (extras != null) metadataBuilder.setExtras(extras)
+        if (artworkUri != null) metadataBuilder.setArtworkUri(artworkUri)
         return MediaItem.Builder()
             .setMediaId(id)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setIsBrowsable(true)
-                    .setIsPlayable(false)
-                    .setMediaType(mediaType)
-                    .build()
-            )
+            .setMediaMetadata(metadataBuilder.build())
             .build()
     }
 
@@ -1384,7 +1406,16 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                 val result = mediaItems.flatMap {
                     if (it.localConfiguration != null)
                         listOf(it)
-                    else if (it.mediaId != MediaItem.DEFAULT_MEDIA_ID)
+                    else if (it.mediaId.startsWith("album_")) {
+                        val albumId = it.mediaId.removePrefix("album_").toLongOrNull()
+                        gramophoneApplication.reader.albumListFlow.first().find { a -> a.id == albumId }?.songList ?: emptyList()
+                    } else if (it.mediaId.startsWith("artist_")) {
+                        val artistName = it.mediaId.removePrefix("artist_")
+                        gramophoneApplication.reader.artistListFlow.first().find { a -> a.title == artistName }?.songList?.shuffled() ?: emptyList()
+                    } else if (it.mediaId.startsWith("playlist_")) {
+                        val playlistId = it.mediaId.removePrefix("playlist_").toLongOrNull()
+                        gramophoneApplication.reader.playlistListFlow.first().find { p -> p.id == playlistId }?.songList ?: emptyList()
+                    } else if (it.mediaId != MediaItem.DEFAULT_MEDIA_ID)
                         gramophoneApplication.reader.songListFlow.first()
                             .filter { m -> m.mediaId == it.mediaId }
                     else if (it.requestMetadata.searchQuery != null)
