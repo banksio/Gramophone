@@ -1047,8 +1047,8 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                         )
                     }
                     // "songs" -> gramophoneApplication.reader.songListFlow.first()
-                    "albums" -> gramophoneApplication.reader.albumListFlow.first().map { createFolderItem("album_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = it.cover, isPlayable = true, isBrowsable = false) }
-                    "artists" -> gramophoneApplication.reader.artistListFlow.first().map { createFolderItem("artist_${it.title}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = it.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) }
+                    "albums" -> gramophoneApplication.reader.albumListFlow.first().map { createFolderItem("album_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, subtitle = it.albumArtist ?: it.songList.firstOrNull()?.mediaMetadata?.artist?.toString(), artworkUri = it.cover, isPlayable = true, isBrowsable = false) }
+                    "artists" -> gramophoneApplication.reader.artistListFlow.first().map { createFolderItem("artist_${it.title}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, subtitle = resources.getQuantityString(R.plurals.songs, it.songList.size, it.songList.size), artworkUri = it.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) }
                     "playlists" -> gramophoneApplication.reader.playlistListFlow.first().map {
                         val title = when (it) {
                             is uk.akane.libphonograph.dynamicitem.RecentlyAdded -> getString(R.string.recently_added)
@@ -1136,11 +1136,11 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                 } else if (mediaId.startsWith("album_")) {
                     val albumId = mediaId.removePrefix("album_").toLongOrNull()
                     val album = gramophoneApplication.reader.albumListFlow.first().find { it.id == albumId }
-                    if (album != null) createFolderItem("album_${album.id}", album.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = album.cover, isPlayable = true, isBrowsable = false) else null
+                    if (album != null) createFolderItem("album_${album.id}", album.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, subtitle = album.albumArtist ?: album.songList.firstOrNull()?.mediaMetadata?.artist?.toString(), artworkUri = album.cover, isPlayable = true, isBrowsable = false) else null
                 } else if (mediaId.startsWith("artist_")) {
                     val artistName = mediaId.removePrefix("artist_")
                     val artist = gramophoneApplication.reader.artistListFlow.first().find { it.title == artistName }
-                    if (artist != null) createFolderItem("artist_${artist.title}", artist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = artist.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) else null
+                    if (artist != null) createFolderItem("artist_${artist.title}", artist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, subtitle = resources.getQuantityString(R.plurals.songs, artist.songList.size, artist.songList.size), artworkUri = artist.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) else null
                 } else if (mediaId.startsWith("playlist_")) {
                     val playlistIdStr = mediaId.removePrefix("playlist_")
                     val playlist = gramophoneApplication.reader.playlistListFlow.first().find { 
@@ -1183,6 +1183,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         id: String,
         title: String,
         mediaType: @MediaMetadata.MediaType Int,
+        subtitle: String? = null,
         extras: android.os.Bundle? = null,
         artworkUri: android.net.Uri? = null,
         isPlayable: Boolean = false,
@@ -1190,6 +1191,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     ): MediaItem {
         val metadataBuilder = MediaMetadata.Builder()
             .setTitle(title)
+            .setSubtitle(subtitle)
             .setIsBrowsable(isBrowsable)
             .setIsPlayable(isPlayable)
             .setMediaType(mediaType)
