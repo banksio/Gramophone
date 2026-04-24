@@ -1049,7 +1049,24 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                     // "songs" -> gramophoneApplication.reader.songListFlow.first()
                     "albums" -> gramophoneApplication.reader.albumListFlow.first().map { createFolderItem("album_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = it.cover, isPlayable = true, isBrowsable = false) }
                     "artists" -> gramophoneApplication.reader.artistListFlow.first().map { createFolderItem("artist_${it.title}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = it.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) }
-                    "playlists" -> gramophoneApplication.reader.playlistListFlow.first().map { createFolderItem("playlist_${it.id}", it.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) }
+                    "playlists" -> gramophoneApplication.reader.playlistListFlow.first().map {
+                        val title = when (it) {
+                            is uk.akane.libphonograph.dynamicitem.RecentlyAdded -> getString(R.string.recently_added)
+                            is uk.akane.libphonograph.dynamicitem.Favorite -> getString(R.string.playlist_favourite)
+                            else -> it.title ?: ""
+                        }
+                        val icon = when (it) {
+                            is uk.akane.libphonograph.dynamicitem.RecentlyAdded -> android.net.Uri.parse("android.resource://$packageName/${R.drawable.ic_default_cover_playlist_recently}")
+                            is uk.akane.libphonograph.dynamicitem.Favorite -> android.net.Uri.parse("android.resource://$packageName/${R.drawable.ic_default_cover_playlist_favorite}")
+                            else -> null
+                        }
+                        val id = when (it) {
+                            is uk.akane.libphonograph.dynamicitem.RecentlyAdded -> "playlist_recently_added"
+                            is uk.akane.libphonograph.dynamicitem.Favorite -> "playlist_favorite"
+                            else -> "playlist_${it.id}"
+                        }
+                        createFolderItem(id, title, MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = icon)
+                    }
                     else -> {
                         if (parentId.startsWith("album_")) {
                             val albumId = parentId.removePrefix("album_").toLongOrNull()
@@ -1058,8 +1075,15 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                             val artistName = parentId.removePrefix("artist_")
                             gramophoneApplication.reader.songListFlow.first().filter { it.mediaMetadata.artist == artistName }
                         } else if (parentId.startsWith("playlist_")) {
-                            val playlistId = parentId.removePrefix("playlist_").toLongOrNull()
-                            gramophoneApplication.reader.playlistListFlow.first().find { it.id == playlistId }?.songList ?: emptyList()
+                            val playlistIdStr = parentId.removePrefix("playlist_")
+                            val playlist = gramophoneApplication.reader.playlistListFlow.first().find { 
+                                when (playlistIdStr) {
+                                    "recently_added" -> it is uk.akane.libphonograph.dynamicitem.RecentlyAdded
+                                    "favorite" -> it is uk.akane.libphonograph.dynamicitem.Favorite
+                                    else -> it.id?.toString() == playlistIdStr
+                                }
+                            }
+                            playlist?.songList ?: emptyList()
                         } else emptyList()
                     }
                 }
@@ -1118,9 +1142,27 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                     val artist = gramophoneApplication.reader.artistListFlow.first().find { it.title == artistName }
                     if (artist != null) createFolderItem("artist_${artist.title}", artist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = artist.albumList.firstOrNull()?.cover, isPlayable = true, isBrowsable = false) else null
                 } else if (mediaId.startsWith("playlist_")) {
-                    val playlistId = mediaId.removePrefix("playlist_").toLongOrNull()
-                    val playlist = gramophoneApplication.reader.playlistListFlow.first().find { it.id == playlistId }
-                    if (playlist != null) createFolderItem("playlist_${playlist.id}", playlist.title ?: "", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED) else null
+                    val playlistIdStr = mediaId.removePrefix("playlist_")
+                    val playlist = gramophoneApplication.reader.playlistListFlow.first().find { 
+                        when (playlistIdStr) {
+                            "recently_added" -> it is uk.akane.libphonograph.dynamicitem.RecentlyAdded
+                            "favorite" -> it is uk.akane.libphonograph.dynamicitem.Favorite
+                            else -> it.id?.toString() == playlistIdStr
+                        }
+                    }
+                    if (playlist != null) {
+                        val title = when (playlist) {
+                            is uk.akane.libphonograph.dynamicitem.RecentlyAdded -> getString(R.string.recently_added)
+                            is uk.akane.libphonograph.dynamicitem.Favorite -> getString(R.string.playlist_favourite)
+                            else -> playlist.title ?: ""
+                        }
+                        val icon = when (playlist) {
+                            is uk.akane.libphonograph.dynamicitem.RecentlyAdded -> android.net.Uri.parse("android.resource://$packageName/${R.drawable.ic_default_cover_playlist_recently}")
+                            is uk.akane.libphonograph.dynamicitem.Favorite -> android.net.Uri.parse("android.resource://$packageName/${R.drawable.ic_default_cover_playlist_favorite}")
+                            else -> null
+                        }
+                        createFolderItem(mediaId, title, MediaMetadata.MEDIA_TYPE_FOLDER_MIXED, artworkUri = icon)
+                    } else null
                 } else {
                     gramophoneApplication.reader.songListFlow.first().find { it.mediaId == mediaId }
                 }
@@ -1456,8 +1498,14 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                         val artistName = it.mediaId.removePrefix("artist_")
                         gramophoneApplication.reader.artistListFlow.first().find { a -> a.title == artistName }?.songList?.shuffled() ?: emptyList()
                     } else if (it.mediaId.startsWith("playlist_")) {
-                        val playlistId = it.mediaId.removePrefix("playlist_").toLongOrNull()
-                        gramophoneApplication.reader.playlistListFlow.first().find { p -> p.id == playlistId }?.songList ?: emptyList()
+                        val playlistIdStr = it.mediaId.removePrefix("playlist_")
+                        gramophoneApplication.reader.playlistListFlow.first().find { p -> 
+                            when (playlistIdStr) {
+                                "recently_added" -> p is uk.akane.libphonograph.dynamicitem.RecentlyAdded
+                                "favorite" -> p is uk.akane.libphonograph.dynamicitem.Favorite
+                                else -> p.id?.toString() == playlistIdStr
+                            }
+                        }?.songList ?: emptyList()
                     } else if (it.mediaId != MediaItem.DEFAULT_MEDIA_ID)
                         gramophoneApplication.reader.songListFlow.first()
                             .filter { m -> m.mediaId == it.mediaId }
