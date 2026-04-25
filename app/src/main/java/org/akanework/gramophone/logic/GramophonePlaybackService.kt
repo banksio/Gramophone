@@ -1479,8 +1479,8 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         controller: MediaSession.ControllerInfo,
         mediaItems: List<MediaItem>
     ): ListenableFuture<List<MediaItem>> {
-        if (mediaItems.find { it.localConfiguration == null } == null) // fast path
-            return Futures.immediateFuture(mediaItems)
+        if (mediaItems.find { it.localConfiguration == null } == null)
+            return Futures.immediateFuture(mediaItems.map { convertItem(it)!! })
         val completion = SettableFuture.create<List<MediaItem>>()
         lifecycleScope.launch(Dispatchers.Default) {
             try {
