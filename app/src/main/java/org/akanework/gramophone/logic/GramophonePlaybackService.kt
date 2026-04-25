@@ -178,6 +178,10 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         get() = lyrics as? SemanticLyrics.SyncedLyrics
     private lateinit var customCommands: List<CommandButton>
     private lateinit var handler: Handler
+    private fun MediaSession.ControllerInfo.isWearableController(): Boolean {
+        return packageName == "com.google.android.wearable.app" ||
+                packageName == "com.google.android.wearable.app.cn"
+    }
     private lateinit var playbackHandler: Handler
     private lateinit var nm: NotificationManagerCompat
     private lateinit var lastPlayedManager: LastPlayedManager
@@ -523,12 +527,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                     }
 
                     override fun loadBitmapFromMetadata(metadata: MediaMetadata): ListenableFuture<Bitmap>? {
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                            // allow using exoplayer's copy extracted here on P- for now
-                            // refer to the TO DO in GramophoneApplication
-                            return super.loadBitmapFromMetadata(metadata)
-                        }
-                        return metadata.artworkUri?.let { loadBitmap(it) }
+                        return metadata.artworkUri?.let { loadBitmap(it) } ?: super.loadBitmapFromMetadata(metadata)
                     }
                 }))
                 .setSessionActivity(
@@ -702,6 +701,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         if (session.isMediaNotificationController(controller)
             || session.isAutoCompanionController(controller)
             || session.isAutomotiveController(controller)
+            || controller.isWearableController()
         ) {
             if (this.controller?.currentTimeline?.isEmpty == false) {
                 builder.setMediaButtonPreferences(
