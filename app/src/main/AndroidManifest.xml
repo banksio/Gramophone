@@ -162,7 +162,7 @@
 
         <provider
             android:name=".logic.GramophoneAlbumArtProvider"
-            android:authorities="org.akanework.gramophone.albumart"
+            android:authorities="${applicationId}.albumart"
             android:exported="true"
             android:grantUriPermissions="true" />
 
