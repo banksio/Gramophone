@@ -118,6 +118,7 @@ import org.akanework.gramophone.logic.utils.LrcUtils.loadAndParseLyricsFile
 import org.akanework.gramophone.logic.utils.ReplayGainAudioProcessor
 import org.akanework.gramophone.logic.utils.ReplayGainUtil
 import org.akanework.gramophone.logic.utils.SemanticLyrics
+import org.akanework.gramophone.logic.utils.GramophoneArtResolver
 import org.akanework.gramophone.logic.utils.exoplayer.EndedWorkaroundPlayer
 import org.akanework.gramophone.logic.utils.exoplayer.GramophoneExtractorsFactory
 import org.akanework.gramophone.logic.utils.exoplayer.GramophoneMediaSourceFactory
@@ -159,28 +160,10 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     val endedWorkaroundPlayer
         get() = internalPlayer
 
-    private fun convertMetadata(metadata: MediaMetadata, albumIdFallback: Long? = null): MediaMetadata {
+    private fun convertMetadata(metadata: MediaMetadata): MediaMetadata {
         val artworkUri = metadata.artworkUri ?: return metadata
-        val scheme = artworkUri.scheme
-        if (scheme == "gramophoneSongCover" || scheme == "gramophoneAlbumCover") {
-            val albumId = metadata.extras?.getLong(uk.akane.libphonograph.items.EXTRA_ALBUM_ID)
-                ?: albumIdFallback
-                ?: (if (scheme == "gramophoneAlbumCover") artworkUri.authority?.toLongOrNull() else null)
-            if (albumId != null) {
-                val uri = android.content.ContentUris.withAppendedId(uk.akane.libphonograph.Constants.baseAlbumCoverUri, albumId)
-                return metadata.buildUpon().setArtworkUri(uri).build()
-            } else if (scheme == "gramophoneSongCover") {
-                val songId = artworkUri.authority?.toLongOrNull()
-                if (songId != null) {
-                    val uri = android.content.ContentUris.appendId(
-                        android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI.buildUpon(),
-                        songId
-                    ).appendPath("albumart").build()
-                    return metadata.buildUpon().setArtworkUri(uri).build()
-                }
-            }
-        }
-        return metadata
+        val providerUri = GramophoneArtResolver.toProviderUri(artworkUri) ?: return metadata
+        return metadata.buildUpon().setArtworkUri(providerUri).build()
     }
 
     private fun convertItem(item: MediaItem?): MediaItem? {
@@ -434,8 +417,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                 return convertItem(super.getCurrentMediaItem())
             }
             override fun getMediaMetadata(): MediaMetadata {
-                val albumIdFallback = super.getCurrentMediaItem()?.mediaMetadata?.extras?.getLong(uk.akane.libphonograph.items.EXTRA_ALBUM_ID)
-                return convertMetadata(super.getMediaMetadata(), albumIdFallback)
+                return convertMetadata(super.getMediaMetadata())
             }
             override fun getCurrentTimeline(): androidx.media3.common.Timeline {
                 val original = super.getCurrentTimeline()
