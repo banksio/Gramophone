@@ -28,6 +28,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Size
 import androidx.media3.common.util.Log
+import org.akanework.gramophone.BuildConfig
 import org.akanework.gramophone.logic.hasScopedStorageV1
 import uk.akane.libphonograph.Constants
 import uk.akane.libphonograph.utils.MiscUtils
@@ -50,7 +51,7 @@ object GramophoneArtResolver {
     private const val TAG = "GramophoneArtResolver"
 
     /** Authority for the ContentProvider that serves art to external processes. */
-    const val PROVIDER_AUTHORITY = "org.akanework.gramophone.albumart"
+    const val PROVIDER_AUTHORITY = "${BuildConfig.APPLICATION_ID}.albumart"
 
     // not actually defined in API, but CTS tested
     // https://cs.android.com/android/platform/superproject/main/+/main:packages/providers/MediaProvider/src/com/android/providers/media/LocalUriMatcher.java;drc=ddf0d00b2b84b205a2ab3581df8184e756462e8d;l=182
