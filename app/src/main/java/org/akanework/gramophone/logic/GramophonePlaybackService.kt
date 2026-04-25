@@ -416,6 +416,9 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
             override fun getCurrentMediaItem(): MediaItem? {
                 return convertItem(super.getCurrentMediaItem())
             }
+            override fun getMediaItemAt(index: Int): MediaItem {
+                return convertItem(super.getMediaItemAt(index)) ?: super.getMediaItemAt(index)
+            }
             override fun getMediaMetadata(): MediaMetadata {
                 return convertMetadata(super.getMediaMetadata())
             }
